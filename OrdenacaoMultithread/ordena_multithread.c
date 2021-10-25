@@ -13,6 +13,11 @@ Implementacao de Ordenação com Threads
 long long *vetor;
 unsigned int tamanho_vetor;
 
+//Debug Mode: Printa na tela os passos da execução (divisão/ordenação)
+//Útil para demonstrar paralelismo das threads
+//Para ativar, alterar valor de debugMode para 1
+int debugMode = 0;
+
 //Declaração de funções de threads
 void *thread_main(void*);
 void *thread_divide(void*);
@@ -32,14 +37,14 @@ typedef struct{
 } args_main;
 
 //Função auxiliar para facilitar criação e gestão de thread para executar thread_main
-int create_thread_main(unsigned int i_a, unsigned int t_a, unsigned int i_b, unsigned int t_b){
+pthread_t *create_thread_main(unsigned int i_a, unsigned int t_a, unsigned int i_b, unsigned int t_b){
     
     //Alocação de memória para passagem de parâmetros
     args_main *data = (args_main*) malloc(sizeof(args_main));
     if(data == NULL){
         printf("Falha na alocação de memória para passagem\n");
         printf("de parâmetros para thread_main.\n");
-        return 1;
+        return 0;
     }
 
     //Configuração dos parâmetros
@@ -54,7 +59,7 @@ int create_thread_main(unsigned int i_a, unsigned int t_a, unsigned int i_b, uns
         printf("Falha na alocação de memória para\n");
         printf("criação de thread_main.\n");
         free(data);
-        return 2;
+        return 0;
     }
 
     //Criação da thread propriamente dita
@@ -63,27 +68,21 @@ int create_thread_main(unsigned int i_a, unsigned int t_a, unsigned int i_b, uns
         printf("Falha na criação de thread_main.\n");
         free(t_main);
         free(data);
-        return 3;
+        return 0;
     }
 
-    //Aguardar o término da execução da thread
-    pthread_join(*t_main, NULL);
-
-    //Liberação de memória
-    free(t_main);
-    free(data);
-
-    return 0;
+    //Função retorna endereço de alocação da thread (ponteiro)
+    return(t_main);
 }
 //Função auxiliar para facilitar criação e gestão de thread para executar thread_divide
-int create_thread_divide(unsigned int i, unsigned int t){
+pthread_t *create_thread_divide(unsigned int i, unsigned int t){
 
     //Alocação de memória para passagem de parâmetros
     args_divide *data = (args_divide*) malloc(sizeof(args_divide));
     if(data == NULL){
         printf("Falha na alocação de memória para passagem\n");
         printf("de parâmetros para thread_divide.\n");
-        return 1;
+        return 0;
     }
 
     //Configuração dos parâmetros
@@ -96,7 +95,7 @@ int create_thread_divide(unsigned int i, unsigned int t){
         printf("Falha na alocação de memória para\n");
         printf("criação de thread_divide.\n");
         free(data);
-        return 2;
+        return 0;
     }
 
     //Criação da thread propriamente dita
@@ -105,17 +104,11 @@ int create_thread_divide(unsigned int i, unsigned int t){
         printf("Falha na criação de thread_divide.\n");
         free(t_divide);
         free(data);
-        return 3;
+        return 0;
     }
 
-    //Aguardar o término da execução da thread
-    pthread_join(*t_divide, NULL);
-
-    //Liberação de memória
-    free(t_divide);
-    free(data);
-    
-    return 0;
+    //Função retorna endereço de alocação da thread (ponteiro)
+    return(t_divide);
 }
 
 //Definição de função thread_main
@@ -125,7 +118,7 @@ void *thread_main(void *args){
     args_main *data = (args_main*) args;
 
     //Declaração de variáveis locais auxiliares
-    int status;
+    pthread_t *thread_a, *thread_b;
     int tmp_a = data->indice_a;
     int tmp_b = data->indice_b;
     int cont = 0;
@@ -137,13 +130,18 @@ void *thread_main(void *args){
     //os vetores são subdivididos, de acordo com a estratégia de
     //merge sort.
     if(data->tamanho_a > 1){
-        status = create_thread_divide(data->indice_a, data->tamanho_a);
-        if(status != 0) return 0;
+        thread_a = create_thread_divide(data->indice_a, data->tamanho_a); 
     }
 
     if(data->tamanho_b > 1){
-        status = create_thread_divide(data->indice_b, data->tamanho_b);
-        if(status != 0) return 0;
+        thread_b = create_thread_divide(data->indice_b, data->tamanho_b);
+    }
+
+    if(thread_a != NULL){
+        pthread_join(*thread_a, NULL);
+    }
+    if(thread_b != NULL){
+        pthread_join(*thread_b, NULL);
     }
 
     //Ordenação dos valores dos subvetores em aux
@@ -165,9 +163,19 @@ void *thread_main(void *args){
     }
 
     //Sobrescrição de aux no vetor global
+    if(debugMode)
+        printf("ORDENACAO: ");
+
     for(cont = 0; cont < (data->tamanho_a + data->tamanho_b); cont++){
         vetor[data->indice_a + cont] = aux[cont];
+        if(debugMode)
+            printf("%lld ", aux[cont]);
     }
+    if(debugMode)
+        printf("\n");
+
+    //Libera memória alocada para parâmetros
+    free(data);
 
     return 0;
 }
@@ -179,6 +187,7 @@ void *thread_divide(void *args){
     args_divide *data = (args_divide*) args;
 
     //Declaração de variáveis locais auxiliares
+    pthread_t *thread;
     unsigned int x, y;
     unsigned int tam_x, tam_y;
 
@@ -188,8 +197,15 @@ void *thread_divide(void *args){
     y = x + tam_x;
     tam_y = (data->tamanho)/2;
 
+    if(debugMode)
+        printf("DIVISAO: %d %d %d %d\n", x, tam_x, y, tam_y);
+
     //Nova thread_main com subvetores divididos
-    create_thread_main(x, tam_x, y, tam_y);
+    thread = create_thread_main(x, tam_x, y, tam_y);
+    pthread_join(*thread, NULL);
+
+    //Libera memória alocada para parâmetros
+    free(data);
 
     return 0;
 }
@@ -211,12 +227,13 @@ int main(int argc, char *argv[]){
         scanf("%lld", &vetor[count_input]);
 
     //Criação da thread principal de ordenação do vetor
-    int status = create_thread_main(0, tamanho_vetor, 0, 0);
+    pthread_t *thread = create_thread_main(0, tamanho_vetor, 0, 0);
+    pthread_join(*thread, NULL);
 
     //Caso não haja nenhuma intercorrência na gestão das threads e na
     //execução do programa, o vetor estará ordenado e será
     //printado na tela, com seus valores separados por espaço
-    if(status == 0){
+    if(thread != 0){
         for(count_input = 0; count_input < tamanho_vetor; count_input++)
             printf("%lld ", vetor[count_input]);  
         printf("\n"); 
